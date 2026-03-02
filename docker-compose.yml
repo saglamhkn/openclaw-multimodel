@@ -1,0 +1,91 @@
+services:
+  # --- Ollama: Local LLM runtime ---
+  ollama:
+    image: ollama/ollama:latest
+    container_name: openclaw-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          memory: 4g
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- OpenClaw Gateway ---
+  openclaw-gateway:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    container_name: openclaw-gateway
+    ports:
+      - "18789:18789"
+    environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-changeme}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OLLAMA_API_KEY=ollama-local
+    volumes:
+      - ./configs/active:/home/node/.openclaw/config:ro
+      - openclaw_workspace:/home/node/.openclaw/workspace
+      - openclaw_data:/home/node/.openclaw/agents
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:18789/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # --- OpenClaw CLI ---
+  openclaw-cli:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    container_name: openclaw-cli
+    network_mode: "service:openclaw-gateway"
+    environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-changeme}
+    volumes:
+      - ./configs/active:/home/node/.openclaw/config:ro
+      - openclaw_workspace:/home/node/.openclaw/workspace
+    depends_on:
+      openclaw-gateway:
+        condition: service_healthy
+    profiles:
+      - cli
+
+  # --- Dev Container (for VSCode devcontainer) ---
+  devcontainer:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    container_name: openclaw-dev
+    command: sleep infinity
+    environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-changeme}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OLLAMA_API_KEY=ollama-local
+    volumes:
+      - .:/workspace:cached
+      - ./configs/active:/home/node/.openclaw/config:ro
+      - openclaw_workspace:/home/node/.openclaw/workspace
+    depends_on:
+      ollama:
+        condition: service_healthy
+    profiles:
+      - devcontainer
+
+volumes:
+  ollama_data:
+  openclaw_workspace:
+  openclaw_data:

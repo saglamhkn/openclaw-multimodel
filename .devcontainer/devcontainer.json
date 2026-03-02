@@ -1,0 +1,30 @@
+{
+  "name": "OpenClaw Multi-Model Dev",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "node",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true
+    }
+  },
+  "forwardPorts": [18789, 11434],
+  "portsAttributes": {
+    "18789": { "label": "OpenClaw Gateway", "onAutoForward": "notify" },
+    "11434": { "label": "Ollama API", "onAutoForward": "notify" }
+  },
+  "postCreateCommand": "bash /workspace/scripts/setup.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "redhat.vscode-yaml"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  }
+}

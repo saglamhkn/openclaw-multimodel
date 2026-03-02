@@ -1,0 +1,23 @@
+# Environment secrets
+.env
+
+# OpenClaw data
+.openclaw/agents/
+.openclaw/sessions/
+.openclaw/workspace/
+.openclaw/logs/
+
+# Active config (generated)
+configs/active/
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
