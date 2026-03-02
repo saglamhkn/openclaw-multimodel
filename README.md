@@ -4,11 +4,13 @@ Run [OpenClaw](https://github.com/openclaw/openclaw) with switchable LLM provide
 
 Includes a devcontainer for one-click local development.
 
+> **Full setup guide:** See [docs/SETUP.md](docs/SETUP.md) for step-by-step instructions per provider (Ollama, Gemini, Claude) including API key setup, model selection, and troubleshooting.
+
 ## Quick Start
 
 ```bash
 # 1. Clone and enter the project
-git clone https://github.com/hakansaglam/openclaw-multimodel.git
+git clone https://github.com/saglamhkn/openclaw-multimodel.git
 cd openclaw-multimodel
 
 # 2. Copy env and add your API keys
