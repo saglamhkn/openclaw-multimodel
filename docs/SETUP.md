@@ -6,74 +6,70 @@ Step-by-step instructions for setting up OpenClaw with your preferred LLM provid
 
 ## Prerequisites
 
-Before you begin, make sure you have:
-
 - **Docker Desktop** (Mac/Windows) or **Docker Engine + Compose v2** (Linux)
-- **4GB+ RAM** available (8GB recommended if running local models)
+- **4GB+ RAM** (only if using Ollama with local models; cloud providers need minimal RAM)
 - **Git** installed
 
 ```bash
-# Verify Docker is installed
 docker --version
 docker compose version
 ```
 
 ---
 
-## Step 1: Clone and Configure
+## Step 1: Clone and Setup
 
 ```bash
 git clone https://github.com/saglamhkn/openclaw-multimodel.git
 cd openclaw-multimodel
-cp .env.example .env
+./scripts/setup.sh
 ```
 
-Now open `.env` in your editor. The only required change is picking your provider — follow **one** of the three guides below.
+This creates `openclaw.config.json` from the example. Now edit it for your provider — follow **one** of the options below.
 
 ---
 
-## Option A: Local Models with Ollama (Free, Private, No API Key)
+## Option A: Local Models with Ollama (Free, Private)
 
-Best if you want full privacy, no cloud dependency, and zero cost. Runs entirely on your machine.
+Best for full privacy, no cloud dependency, and zero cost.
 
-### 1. Configure `.env`
+### 1. Edit `openclaw.config.json`
 
-```bash
-ACTIVE_PROVIDER=ollama
-OLLAMA_MODEL=llama3.3
+```json
+{
+  "models": {
+    "primary": "ollama/llama3.3",
+    "fallback": ["ollama/qwen2.5-coder:32b", "ollama/deepseek-r1:14b"]
+  },
+  "ollama": {
+    "enabled": true,
+    "memory": "4g"
+  }
+}
 ```
 
-That's it — no API key needed.
+No API keys needed.
 
-### 2. Start Services
+### 2. Generate and Start
 
 ```bash
-./scripts/setup.sh
+./scripts/generate-config.sh
 docker compose up -d
 ```
 
 ### 3. Pull a Model
 
-The Ollama container starts empty. You need to pull at least one model:
-
 ```bash
-# Recommended general-purpose model
 docker exec openclaw-ollama ollama pull llama3.3
 
-# Or for coding tasks
-docker exec openclaw-ollama ollama pull qwen2.5-coder:32b
-
-# Or pull all preconfigured models at once
+# Or pull all preconfigured models
 ./scripts/pull-ollama-models.sh
 ```
 
 ### 4. Verify
 
 ```bash
-# Check Ollama is running and has models
 curl http://localhost:11434/api/tags
-
-# Check OpenClaw gateway
 curl http://localhost:18789/healthz
 ```
 
@@ -81,59 +77,52 @@ curl http://localhost:18789/healthz
 
 | Model | Size | Best For |
 |-------|------|----------|
-| `llama3.3` | ~4GB | General purpose, good balance |
-| `qwen2.5-coder:32b` | ~18GB | Code generation, debugging |
-| `deepseek-r1:14b` | ~9GB | Reasoning, complex tasks |
+| `llama3.2:3b` | ~2GB | Low-resource servers |
+| `llama3.3` | ~4GB | General purpose |
+| `qwen2.5-coder:32b` | ~18GB | Code generation |
+| `deepseek-r1:14b` | ~9GB | Reasoning |
 
-To use a different model, edit `configs/ollama.json`:
+### Adapting to Server Power
 
-```json
-{
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "ollama/YOUR_MODEL_NAME"
-      }
-    }
-  }
-}
-```
+Adjust `ollama.memory` based on your hardware:
 
-Then restart: `docker compose restart openclaw-gateway`
-
-### Hardware Requirements
-
-| Model Size | RAM Needed | GPU Recommended |
-|-----------|------------|-----------------|
-| 7B params | 8GB | No (CPU ok, slower) |
-| 14B params | 16GB | Yes |
-| 32B params | 32GB | Yes (NVIDIA) |
+| Model Size | Config Memory | Server RAM |
+|-----------|---------------|------------|
+| 3B params | `"2g"` | 4GB+ |
+| 7B params | `"4g"` | 8GB+ |
+| 14B params | `"8g"` | 16GB+ |
+| 32B params | `"16g"` | 32GB+ |
 
 ---
 
-## Option B: Google Gemini API
+## Option B: Google Gemini API (No Ollama)
 
-Best if you want fast responses, large context windows, and Google's latest models.
+Best for fast responses and large context windows. Ollama does not start.
 
 ### 1. Get Your API Key
 
 1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
-2. Sign in with your Google account
-3. Click **"Create API Key"**
-4. Copy the key (starts with `AIza...`)
+2. Sign in and click **"Create API Key"**
+3. Copy the key (starts with `AIza...`)
 
-### 2. Configure `.env`
+### 2. Edit `openclaw.config.json`
 
-```bash
-ACTIVE_PROVIDER=gemini
-GEMINI_API_KEY=AIzaSy...your-key-here
-GEMINI_MODEL=gemini-2.5-flash
+```json
+{
+  "models": {
+    "primary": "google/gemini-2.5-flash",
+    "fallback": ["google/gemini-2.5-pro"]
+  },
+  "keys": {
+    "gemini": "AIzaSy...your-key-here"
+  }
+}
 ```
 
-### 3. Start Services
+### 3. Generate and Start
 
 ```bash
-./scripts/setup.sh
+./scripts/generate-config.sh
 docker compose up -d
 ```
 
@@ -141,12 +130,6 @@ docker compose up -d
 
 ```bash
 ./scripts/test-provider.sh
-```
-
-You should see:
-
-```
-Gemini:  KEY CONFIGURED
 ```
 
 ### Available Gemini Models
@@ -156,50 +139,40 @@ Gemini:  KEY CONFIGURED
 | `gemini-2.5-flash` | Fast | 1M tokens | Quick tasks, large documents |
 | `gemini-2.5-pro` | Slower | 1M tokens | Complex reasoning |
 
-To change the model, edit `configs/gemini.json`:
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "google/gemini-2.5-pro"
-      }
-    }
-  }
-}
-```
-
 ### Pricing
 
 Gemini offers a free tier with rate limits. Check [Google AI pricing](https://ai.google.dev/pricing) for current rates.
 
 ---
 
-## Option C: Anthropic Claude API
+## Option C: Anthropic Claude API (No Ollama)
 
-Best if you want strong reasoning, excellent code generation, and nuanced responses.
+Best for strong reasoning, code generation, and nuanced responses. Ollama does not start.
 
 ### 1. Get Your API Key
 
 1. Go to [Anthropic Console](https://console.anthropic.com/)
-2. Create an account or sign in
-3. Navigate to **API Keys**
-4. Click **"Create Key"**
-5. Copy the key (starts with `sk-ant-...`)
+2. Navigate to **API Keys** and click **"Create Key"**
+3. Copy the key (starts with `sk-ant-...`)
 
-### 2. Configure `.env`
+### 2. Edit `openclaw.config.json`
 
-```bash
-ACTIVE_PROVIDER=claude
-ANTHROPIC_API_KEY=sk-ant-...your-key-here
-CLAUDE_MODEL=claude-sonnet-4-5
+```json
+{
+  "models": {
+    "primary": "anthropic/claude-sonnet-4-5",
+    "fallback": ["anthropic/claude-haiku-4-5"]
+  },
+  "keys": {
+    "anthropic": "sk-ant-...your-key-here"
+  }
+}
 ```
 
-### 3. Start Services
+### 3. Generate and Start
 
 ```bash
-./scripts/setup.sh
+./scripts/generate-config.sh
 docker compose up -d
 ```
 
@@ -207,12 +180,6 @@ docker compose up -d
 
 ```bash
 ./scripts/test-provider.sh
-```
-
-You should see:
-
-```
-Claude:  KEY CONFIGURED
 ```
 
 ### Available Claude Models
@@ -223,95 +190,262 @@ Claude:  KEY CONFIGURED
 | `claude-haiku-4-5` | Fast | Quick tasks, lower cost |
 | `claude-opus-4-6` | Slower | Complex reasoning, research |
 
-To change the model, edit `configs/claude.json`:
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "anthropic/claude-opus-4-6"
-      }
-    }
-  }
-}
-```
-
 ### Pricing
 
 Claude requires a funded account. Check [Anthropic pricing](https://www.anthropic.com/pricing) for current rates.
 
 ---
 
-## Switching Between Providers
+## Option D: MCP Servers (Tool Use)
 
-You can switch providers at any time without losing data:
+MCP (Model Context Protocol) lets your LLM use external tools like GitHub, filesystem access, and more. This turns text-only chat into an agentic workflow where the model can read repos, create issues, search code, etc.
 
-```bash
-# Switch to Ollama
-./scripts/switch-provider.sh ollama
+MCP servers are configured per environment, supporting three transport types:
 
-# Switch to Gemini
-./scripts/switch-provider.sh gemini
+| Type | Use Case | How It Works |
+|------|----------|--------------|
+| `docker` | Local dev (macOS with Docker Desktop) | MCP server runs as a Docker container |
+| `stdio` | Production / non-Docker environments | MCP server runs as a subprocess (e.g., `npx`) |
+| `sse` | Remote MCP endpoint | Connects to an external SSE URL |
 
-# Switch to Claude
-./scripts/switch-provider.sh claude
+### Local Dev: Docker MCP (GitHub)
 
-# Restart to apply the change
-docker compose restart openclaw-gateway
+#### 1. Get a GitHub Personal Access Token
+
+1. Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+2. Click **"Generate new token (classic)"**
+3. Select scopes: `repo`, `read:org`, `read:user`
+4. Copy the token
+
+#### 2. Edit `openclaw.config.json`
+
+```json
+{
+  "environments": {
+    "dev": {
+      "models": { "primary": "docker-model-runner/ai/qwen3-coder" },
+      "mcp": {
+        "servers": {
+          "github": {
+            "enabled": true,
+            "type": "docker",
+            "image": "ghcr.io/github/github-mcp-server",
+            "env": {
+              "GITHUB_PERSONAL_ACCESS_TOKEN": "${keys.github}"
+            }
+          }
+        }
+      }
+    }
+  },
+  "keys": {
+    "github": "ghp_xxxxxxxxxxxx"
+  }
+}
 ```
 
-The switch script copies the matching config file to `configs/active/openclaw.json`, which is what OpenClaw reads at startup.
+The `${keys.github}` reference is resolved at generation time from the `keys` block.
+
+#### 3. Generate and Start
+
+```bash
+./scripts/generate-config.sh
+COMPOSE_PROFILES=dev,mcp docker compose up -d
+```
+
+#### 4. Verify
+
+```bash
+./scripts/test-mcp.sh dev
+```
+
+### Production: stdio MCP (GitHub)
+
+For production or non-Docker environments, use `stdio` type which runs MCP servers as subprocesses:
+
+```json
+{
+  "environments": {
+    "prod": {
+      "mcp": {
+        "servers": {
+          "github": {
+            "enabled": true,
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
+            "env": {
+              "GITHUB_PERSONAL_ACCESS_TOKEN": "${keys.github}"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Requires Node.js/npm on the production host.
+
+### Remote: SSE MCP
+
+For connecting to a hosted MCP endpoint:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "github": {
+        "enabled": true,
+        "type": "sse",
+        "url": "https://mcp-proxy.example.com/github/sse"
+      }
+    }
+  }
+}
+```
+
+### MCP Server Config Reference
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `enabled` | yes | Toggle this server on/off |
+| `type` | yes | `docker`, `stdio`, or `sse` |
+| `image` | docker | Docker image for the MCP server |
+| `command` | stdio | Command to run (e.g., `npx`) |
+| `args` | stdio | Array of command arguments |
+| `url` | sse | Full SSE endpoint URL |
+| `env` | optional | Environment variables; supports `${keys.XYZ}` interpolation |
 
 ---
 
-## Testing All Providers
+## Changing Configuration
 
-Run the test script to see which providers are available:
+After editing `openclaw.config.json`, always regenerate and restart:
 
 ```bash
-./scripts/test-provider.sh
+./scripts/generate-config.sh
+docker compose up -d
 ```
 
-Example output:
+This produces `.env` (for docker-compose) and `configs/active/openclaw.json` (for OpenClaw runtime).
 
+---
+
+## Telegram Bot
+
+Chat with ClawBot via Telegram. Supports text messages, photos, and voice notes.
+
+### 1. Create a Telegram Bot
+
+1. Open Telegram and message [@BotFather](https://t.me/BotFather)
+2. Send `/newbot` and follow the prompts
+3. Copy the bot token (format: `123456:ABC-DEF...`)
+
+### 2. Configure
+
+Edit `openclaw.config.json`:
+
+```json
+{
+  "telegram": {
+    "enabled": true,
+    "token": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+  }
+}
 ```
-=== Provider Status ===
-  Ollama:  AVAILABLE
-  Gemini:  KEY CONFIGURED
-  Claude:  NO API KEY
+
+### 3. Start
+
+```bash
+./scripts/generate-config.sh
+docker compose up -d
 ```
+
+The bot auto-enables the OpenClaw Chat Completions API endpoint and starts the `clawbot-telegram` container.
+
+### Features
+
+- **Text** — sends your message to OpenClaw, returns the AI response
+- **Photos** — downloads the image and sends it as a multimodal vision request
+- **Voice** — downloads the audio and forwards it to the LLM
+- **Conversation memory** — maintains per-chat history (resets on container restart)
+- **Commands** — `/start` (intro), `/clear` (reset history)
+
+---
+
+## Full Config Reference
+
+```json
+{
+  "models": {
+    "primary": "google/gemini-2.5-flash",
+    "fallback": ["google/gemini-2.5-pro"]
+  },
+  "keys": {
+    "gemini": "",
+    "anthropic": "",
+    "github": ""
+  },
+  "ollama": {
+    "enabled": false,
+    "memory": "4g",
+    "image": "ollama/ollama:latest",
+    "port": 11434
+  },
+  "gateway": {
+    "token": "changeme-generate-a-real-token",
+    "port": 18789
+  },
+  "openclaw": {
+    "image": "ghcr.io/openclaw/openclaw:latest"
+  },
+  "telegram": {
+    "enabled": false,
+    "token": ""
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `models.primary` | Main model in `provider/model` format |
+| `models.fallback` | Array of fallback models |
+| `keys.gemini` | Google Gemini API key |
+| `keys.anthropic` | Anthropic Claude API key |
+| `keys.github` | GitHub Personal Access Token (for MCP) |
+| `ollama.enabled` | Start Ollama service (auto-enabled if models use `ollama/`) |
+| `ollama.memory` | Docker memory reservation for Ollama |
+| `ollama.image` | Ollama Docker image |
+| `ollama.port` | Ollama API port |
+| `gateway.token` | OpenClaw gateway auth token |
+| `gateway.port` | OpenClaw gateway port |
+| `openclaw.image` | OpenClaw Docker image |
+| `telegram.enabled` | Start the Telegram bot service |
+| `telegram.token` | Telegram Bot API token from @BotFather |
 
 ---
 
 ## Using the Devcontainer (VSCode)
 
-If you prefer developing inside a container:
-
 1. Install the **Dev Containers** extension in VSCode
 2. Open the `openclaw-multimodel` folder
-3. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac)
-4. Select **"Dev Containers: Reopen in Container"**
-5. Wait for the build — Ollama and OpenClaw start automatically
-6. Open `http://localhost:18789` in your browser
-
-The devcontainer forwards ports 18789 (OpenClaw) and 11434 (Ollama) to your host.
+3. Press `Ctrl+Shift+P` > **"Dev Containers: Reopen in Container"**
+4. Services start automatically based on your config
+5. Open `http://localhost:18789` in your browser
 
 ---
 
 ## Accessing the OpenClaw Gateway
 
-Once running, open your browser:
-
 ```
 http://localhost:18789
 ```
 
-You'll need the gateway token from your `.env` file:
+You'll need the gateway token from `openclaw.config.json`:
 
-```bash
-# Default token (change this in production!)
-OPENCLAW_GATEWAY_TOKEN=changeme-generate-a-real-token
+```json
+{ "gateway": { "token": "your-token-here" } }
 ```
 
 Generate a secure token:
@@ -327,34 +461,28 @@ openssl rand -hex 32
 ### OpenClaw gateway won't start
 
 ```bash
-# Check logs
 docker compose logs openclaw-gateway
-
-# Verify config is valid JSON
 python3 -m json.tool configs/active/openclaw.json
 ```
 
 ### Ollama model runs out of memory
 
-Use a smaller model:
+Use a smaller model and reduce memory in config:
 
-```bash
-docker exec openclaw-ollama ollama pull llama3.2:3b
+```json
+{ "models": { "primary": "ollama/llama3.2:3b" }, "ollama": { "memory": "2g" } }
 ```
-
-Then update `configs/ollama.json` to use `ollama/llama3.2:3b`.
 
 ### API key errors (Gemini/Claude)
 
-1. Check your `.env` file has the key with no extra spaces
-2. Verify the key works directly:
+Check your `openclaw.config.json` has the key with no extra spaces:
 
 ```bash
 # Test Gemini key
-curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"
+source .env && curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"
 
 # Test Claude key
-curl https://api.anthropic.com/v1/messages \
+source .env && curl https://api.anthropic.com/v1/messages \
   -H "x-api-key: $ANTHROPIC_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -H "content-type: application/json" \
@@ -363,16 +491,14 @@ curl https://api.anthropic.com/v1/messages \
 
 ### Container can't reach Ollama
 
-Inside Docker, the Ollama service is at `http://ollama:11434` (not `localhost`). This is already configured in `configs/ollama.json`. If you changed it, make sure it uses the Docker service name.
+Inside Docker, Ollama is at `http://ollama:11434` (not `localhost`). This is auto-configured by `generate-config.sh`.
 
 ### Ports already in use
 
-```bash
-# Check what's using the ports
-lsof -i :18789
-lsof -i :11434
+Change ports in `openclaw.config.json`:
 
-# Or change ports in docker-compose.yml
-ports:
-  - "19000:18789"  # map to different host port
+```json
+{ "gateway": { "port": 19000 }, "ollama": { "port": 12434 } }
 ```
+
+Then regenerate: `./scripts/generate-config.sh`

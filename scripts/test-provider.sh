@@ -3,16 +3,26 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+CONFIG_FILE="$PROJECT_DIR/openclaw.config.json"
+ENV="${1:-dev}"
 
-# Load .env
-if [ -f "$PROJECT_DIR/.env" ]; then
-  source "$PROJECT_DIR/.env"
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "Warning: openclaw.config.json not found, using defaults"
+  GATEWAY_PORT=18789
+else
+  eval "$(python3 -c "
+import json
+with open('$CONFIG_FILE') as f:
+    cfg = json.load(f)
+print(f'GATEWAY_PORT={cfg.get(\"gateway\", {}).get(\"port\", 18789)}')
+print(f'GEMINI_API_KEY=\"{cfg.get(\"keys\", {}).get(\"gemini\", \"\")}\"')
+print(f'ANTHROPIC_API_KEY=\"{cfg.get(\"keys\", {}).get(\"anthropic\", \"\")}\"')
+" 2>/dev/null)"
 fi
 
-TOKEN="${OPENCLAW_GATEWAY_TOKEN:-changeme}"
-GATEWAY="http://localhost:18789"
+GATEWAY="http://localhost:${GATEWAY_PORT}"
 
-echo "=== OpenClaw Provider Test ==="
+echo "=== OpenClaw Provider Test [$ENV] ==="
 echo ""
 
 # Check gateway health
@@ -21,27 +31,12 @@ if curl -fsS "$GATEWAY/healthz" > /dev/null 2>&1; then
   echo "   Gateway: OK"
 else
   echo "   Gateway: UNREACHABLE"
-  echo "   Run: docker compose up -d"
-  exit 1
+  echo "   Run: COMPOSE_PROFILES=$ENV docker compose up -d"
 fi
 
-# Check Ollama health
-echo "2. Checking Ollama..."
-if curl -fsS "http://localhost:11434/api/tags" > /dev/null 2>&1; then
-  MODELS=$(curl -s "http://localhost:11434/api/tags" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-models = [m['name'] for m in data.get('models', [])]
-print(', '.join(models) if models else 'No models pulled')
-" 2>/dev/null || echo "No models pulled")
-  echo "   Ollama: OK (models: $MODELS)"
-else
-  echo "   Ollama: UNREACHABLE"
-fi
-
-# Show active config
-echo "3. Active configuration:"
-ACTIVE_CONFIG="$PROJECT_DIR/configs/active/openclaw.json"
+# Check active config
+echo "2. Active configuration:"
+ACTIVE_CONFIG="$PROJECT_DIR/configs/active/$ENV/openclaw.json"
 if [ -f "$ACTIVE_CONFIG" ]; then
   PRIMARY=$(python3 -c "
 import json
@@ -51,23 +46,23 @@ print(c.get('agents',{}).get('defaults',{}).get('model',{}).get('primary','unkno
 " 2>/dev/null || echo "unknown")
   echo "   Primary model: $PRIMARY"
 else
-  echo "   No active config. Run: ./scripts/switch-provider.sh <provider>"
+  echo "   No active config for '$ENV'. Run: ./scripts/generate-config.sh"
 fi
 
-# Test all providers
 echo ""
 echo "=== Provider Status ==="
 
-# Ollama
-echo -n "  Ollama:  "
-if curl -fsS "http://localhost:11434/api/tags" > /dev/null 2>&1; then
+# Docker Model Runner
+echo -n "  Docker Model Runner: "
+if docker model list >/dev/null 2>&1; then
   echo "AVAILABLE"
+  docker model list 2>/dev/null | head -10
 else
-  echo "NOT RUNNING"
+  echo "NOT AVAILABLE (requires Docker Desktop with model runner)"
 fi
 
 # Gemini
-echo -n "  Gemini:  "
+echo -n "  Gemini:              "
 if [ -n "${GEMINI_API_KEY:-}" ]; then
   echo "KEY CONFIGURED"
 else
@@ -75,12 +70,20 @@ else
 fi
 
 # Claude
-echo -n "  Claude:  "
+echo -n "  Claude:              "
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   echo "KEY CONFIGURED"
 else
   echo "NO API KEY"
 fi
 
+# Ollama
+echo -n "  Ollama:              "
+if curl -fsS "http://localhost:11434/api/tags" > /dev/null 2>&1; then
+  echo "AVAILABLE"
+else
+  echo "NOT RUNNING"
+fi
+
 echo ""
-echo "To switch providers: ./scripts/switch-provider.sh <ollama|gemini|claude>"
+echo "Run ./scripts/init-models.sh $ENV for detailed model readiness check"

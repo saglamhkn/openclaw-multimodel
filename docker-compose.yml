@@ -1,91 +1,117 @@
 services:
-  # --- Ollama: Local LLM runtime ---
+  # --- Ollama: Local LLM runtime (only starts with ollama profile) ---
   ollama:
-    image: ollama/ollama:latest
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
     container_name: openclaw-ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=-1
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
     deploy:
       resources:
         reservations:
-          memory: 4g
+          memory: ${OLLAMA_MEMORY:-4g}
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:11434/api/tags || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # --- OpenClaw Gateway ---
-  openclaw-gateway:
-    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
-    container_name: openclaw-gateway
-    ports:
-      - "18789:18789"
-    environment:
-      - HOME=/home/node
-      - TERM=xterm-256color
-      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-changeme}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - OLLAMA_API_KEY=ollama-local
-    volumes:
-      - ./configs/active:/home/node/.openclaw/config:ro
-      - openclaw_workspace:/home/node/.openclaw/workspace
-      - openclaw_data:/home/node/.openclaw/agents
-    depends_on:
-      ollama:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:18789/healthz || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # --- OpenClaw CLI ---
-  openclaw-cli:
-    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
-    container_name: openclaw-cli
-    network_mode: "service:openclaw-gateway"
-    environment:
-      - HOME=/home/node
-      - TERM=xterm-256color
-      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-changeme}
-    volumes:
-      - ./configs/active:/home/node/.openclaw/config:ro
-      - openclaw_workspace:/home/node/.openclaw/workspace
-    depends_on:
-      openclaw-gateway:
-        condition: service_healthy
     profiles:
-      - cli
+      - ollama
 
-  # --- Dev Container (for VSCode devcontainer) ---
+  # --- Dev: local development with Docker Model Runner / Ollama ---
   devcontainer:
     image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
     container_name: openclaw-dev
     command: sleep infinity
+    ports:
+      - "${GATEWAY_PORT:-18789}:18789"
     environment:
       - HOME=/home/node
       - TERM=xterm-256color
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-changeme}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - OLLAMA_API_KEY=ollama-local
     volumes:
       - .:/workspace:cached
-      - ./configs/active:/home/node/.openclaw/config:ro
-      - openclaw_workspace:/home/node/.openclaw/workspace
-    depends_on:
-      ollama:
-        condition: service_healthy
+      - openclaw_state_dev:/home/node/.openclaw
+      - ./configs/active/dev/openclaw.json:/home/node/.openclaw/openclaw.json:ro
+      - ./configs/active/dev/mcporter.json:/home/node/.config/mcporter/mcporter.json:ro
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    extra_hosts:
+      - "model-runner.docker.internal:192.168.65.129"
+
+  # --- MCP GitHub Server: provides GitHub tools via MCP (only starts with mcp profile) ---
+  mcp-github:
+    image: ${MCP_GITHUB_IMAGE:-ghcr.io/github/github-mcp-server}
+    container_name: openclaw-mcp-github
+    stdin_open: true
+    environment:
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${MCP_GITHUB_GITHUB_PERSONAL_ACCESS_TOKEN:-}
+    restart: "no"
     profiles:
-      - devcontainer
+      - mcp
+
+  # --- Beta: cloud models on DigitalOcean ---
+  beta:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    container_name: openclaw-beta
+    command: sleep infinity
+    ports:
+      - "${GATEWAY_PORT:-18789}:18789"
+    environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-changeme}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - openclaw_state_beta:/home/node/.openclaw
+      - ./configs/active/beta/openclaw.json:/home/node/.openclaw/openclaw.json:ro
+      - ./configs/active/beta/mcporter.json:/home/node/.config/mcporter/mcporter.json:ro
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    restart: unless-stopped
+    profiles:
+      - beta
+
+  # --- Prod: cloud models on DigitalOcean ---
+  prod:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    container_name: openclaw-prod
+    command: sleep infinity
+    ports:
+      - "${GATEWAY_PORT:-18789}:18789"
+    environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-changeme}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - openclaw_state_prod:/home/node/.openclaw
+      - ./configs/active/prod/openclaw.json:/home/node/.openclaw/openclaw.json:ro
+      - ./configs/active/prod/mcporter.json:/home/node/.config/mcporter/mcporter.json:ro
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    restart: unless-stopped
+    profiles:
+      - prod
+
+models:
+  qwen3-coder:
+    model: ai/qwen3-coder:32k
+    context_size: 32768
 
 volumes:
   ollama_data:
-  openclaw_workspace:
-  openclaw_data:
+  openclaw_state_dev:
+  openclaw_state_beta:
+  openclaw_state_prod:

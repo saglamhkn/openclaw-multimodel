@@ -1,5 +1,9 @@
-# Environment secrets
+# User config (contains API keys)
+openclaw.config.json
+
+# Auto-generated from openclaw.config.json
 .env
+.env.*
 
 # OpenClaw data
 .openclaw/agents/

@@ -8,14 +8,17 @@
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
       "configureZshAsDefaultShell": true
-    }
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
   },
-  "forwardPorts": [18789, 11434],
+  "forwardPorts": [18789],
   "portsAttributes": {
-    "18789": { "label": "OpenClaw Gateway", "onAutoForward": "notify" },
-    "11434": { "label": "Ollama API", "onAutoForward": "notify" }
+    "18789": { "label": "OpenClaw Gateway", "onAutoForward": "notify" }
   },
-  "postCreateCommand": "bash /workspace/scripts/setup.sh",
+  "postCreateCommand": "bash /workspace/scripts/setup.sh && npm install -g mcporter 2>/dev/null || true",
+  "initializeCommand": "mkdir -p configs/active/dev configs/active/beta configs/active/prod",
+  "postStartCommand": "chown -R node:node /home/node/.openclaw /home/node/.config 2>/dev/null || true && bash /workspace/scripts/init-models.sh dev",
+  "waitFor": "postCreateCommand",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -23,7 +26,10 @@
         "redhat.vscode-yaml"
       ],
       "settings": {
-        "terminal.integrated.defaultProfile.linux": "zsh"
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.env.linux": {
+          "NODE_OPTIONS": "--require /workspace/scripts/undici-timeout-preload.cjs"
+        }
       }
     }
   }

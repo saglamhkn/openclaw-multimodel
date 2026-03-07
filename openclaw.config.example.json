@@ -1,0 +1,70 @@
+{
+  "environments": {
+    "dev": {
+      "models": {
+        "primary": "docker-model-runner/ai/qwen3-coder",
+        "fallback": []
+      },
+      "docker-model-runner": {
+        "context-size": 32768,
+        "keep-alive": -1
+      },
+      "mcp": {
+        "servers": {
+          "github": {
+            "enabled": true,
+            "type": "docker",
+            "image": "ghcr.io/github/github-mcp-server",
+            "env": {
+              "GITHUB_PERSONAL_ACCESS_TOKEN": "${keys.github}"
+            }
+          }
+        }
+      }
+    },
+    "beta": {
+      "models": {
+        "primary": "google/gemini-2.5-flash",
+        "fallback": ["google/gemini-2.5-pro"]
+      },
+      "mcp": {
+        "servers": {}
+      }
+    },
+    "prod": {
+      "models": {
+        "primary": "google/gemini-2.5-flash",
+        "fallback": ["google/gemini-2.5-pro"]
+      },
+      "mcp": {
+        "servers": {
+          "github": {
+            "enabled": true,
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
+            "env": {
+              "GITHUB_PERSONAL_ACCESS_TOKEN": "${keys.github}"
+            }
+          }
+        }
+      }
+    }
+  },
+  "keys": {
+    "gemini": "",
+    "anthropic": "",
+    "github": ""
+  },
+  "gateway": {
+    "token": "changeme-generate-a-real-token",
+    "port": 18789
+  },
+  "openclaw": {
+    "image": "ghcr.io/openclaw/openclaw:latest"
+  },
+  "telegram": {
+    "enabled": false,
+    "token": ""
+  }
+}
