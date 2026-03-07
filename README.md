@@ -113,8 +113,9 @@ Give your LLM access to external tools like GitHub via MCP. Supports Docker cont
         "servers": {
           "github": {
             "enabled": true,
-            "type": "docker",
-            "image": "ghcr.io/github/github-mcp-server",
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
             "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${keys.github}" }
           }
         }
@@ -127,11 +128,53 @@ Give your LLM access to external tools like GitHub via MCP. Supports Docker cont
 
 ```bash
 ./scripts/generate-config.sh
-COMPOSE_PROFILES=dev,mcp docker compose up -d
+docker compose up -d
 ./scripts/test-mcp.sh dev
 ```
 
 See [docs/SETUP.md](docs/SETUP.md) for full MCP setup including production (stdio) and remote (SSE) configurations.
+
+## ClawHub Skills
+
+Install AI agent skills from [ClawHub](https://clawhub.ai), the official OpenClaw skill registry.
+
+Add skills per environment in `openclaw.config.json`:
+
+```json
+{
+  "environments": {
+    "dev": {
+      "skills": {
+        "web-search": { "enabled": true },
+        "memory": { "enabled": true }
+      }
+    }
+  },
+  "skills": {
+    "installDir": "workspace"
+  }
+}
+```
+
+```bash
+./scripts/generate-config.sh
+./scripts/install-skills.sh dev
+```
+
+Skills auto-install on devcontainer start. To manually manage skills inside the container:
+
+```bash
+clawhub search web               # search the registry
+clawhub install web-search       # install a skill
+clawhub list                     # list installed skills
+clawhub update --all             # update all skills
+```
+
+| Config Field | Description |
+|-------------|-------------|
+| `skills.<slug>.enabled` | Whether to install and activate the skill |
+| `skills.<slug>.env` | Environment variables passed to the skill |
+| `skills.installDir` | `workspace` (./skills/) or `shared` (~/.openclaw/skills/) |
 
 ## Telegram Bot
 
@@ -164,10 +207,12 @@ Chat with ClawBot via Telegram — uses OpenClaw's built-in Telegram channel (gr
 │   ├── dev/openclaw.json
 │   ├── beta/openclaw.json
 │   └── prod/openclaw.json
+├── skills/                            # ClawHub installed skills (gitignored)
 ├── scripts/
 │   ├── setup.sh                    # Initial project setup
 │   ├── generate-config.sh          # Generate per-env configs
 │   ├── init-models.sh              # Universal model readiness + auto-configure
+│   ├── install-skills.sh           # Install ClawHub skills per environment
 │   ├── test-provider.sh            # Test provider connectivity
 │   └── test-mcp.sh                 # Test MCP server connectivity
 ├── openclaw.config.example.json    # Config template (committed)

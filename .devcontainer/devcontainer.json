@@ -15,17 +15,19 @@
   "portsAttributes": {
     "18789": { "label": "OpenClaw Gateway", "onAutoForward": "notify" }
   },
-  "postCreateCommand": "bash /workspace/scripts/setup.sh && npm config set prefix /home/node/.npm-global && npm install -g mcporter",
+  "postCreateCommand": "bash /workspace/scripts/setup.sh && npm config set prefix /home/node/.npm-global && npm install -g mcporter clawhub",
   "initializeCommand": "mkdir -p configs/active/dev configs/active/beta configs/active/prod",
-  "postStartCommand": "chown -R node:node /home/node/.openclaw /home/node/.mcporter 2>/dev/null || true && bash /workspace/scripts/init-models.sh dev",
+  "postStartCommand": "chown -R node:node /home/node/.openclaw /home/node/.mcporter 2>/dev/null || true && bash /workspace/scripts/init-models.sh dev && bash /workspace/scripts/install-skills.sh dev",
   "waitFor": "postCreateCommand",
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-azuretools.vscode-docker",
-        "redhat.vscode-yaml"
+        "redhat.vscode-yaml",
+        "GitHub.github-vscode-theme"
       ],
       "settings": {
+        "workbench.colorTheme": "GitHub Dark High Contrast",
         "terminal.integrated.defaultProfile.linux": "zsh",
         "terminal.integrated.env.linux": {
           "NODE_OPTIONS": "--require /workspace/scripts/undici-timeout-preload.cjs",

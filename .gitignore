@@ -14,6 +14,9 @@ openclaw.config.json
 # Active config (generated)
 configs/active/
 
+# ClawHub installed skills
+skills/
+
 # Docker
 docker-compose.override.yml
 

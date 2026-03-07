@@ -14,13 +14,19 @@
         "servers": {
           "github": {
             "enabled": true,
-            "type": "docker",
-            "image": "ghcr.io/github/github-mcp-server",
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
             "env": {
               "GITHUB_PERSONAL_ACCESS_TOKEN": "${keys.github}"
             }
           }
         }
+      },
+      "skills": {
+        "web-search": { "enabled": false },
+        "screenshot": { "enabled": false },
+        "memory": { "enabled": false }
       }
     },
     "beta": {
@@ -30,7 +36,8 @@
       },
       "mcp": {
         "servers": {}
-      }
+      },
+      "skills": {}
     },
     "prod": {
       "models": {
@@ -57,12 +64,19 @@
     "anthropic": "",
     "github": ""
   },
+  "agent": {
+    "timeoutSeconds": 300,
+    "typingIntervalSeconds": 300
+  },
   "gateway": {
     "token": "changeme-generate-a-real-token",
     "port": 18789
   },
   "openclaw": {
     "image": "ghcr.io/openclaw/openclaw:latest"
+  },
+  "skills": {
+    "installDir": "workspace"
   },
   "telegram": {
     "enabled": false,
