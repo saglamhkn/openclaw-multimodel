@@ -58,6 +58,13 @@ telegram_token = telegram.get("token", "")
 if telegram_enabled and not telegram_token:
     print("Warning: telegram.enabled is true but telegram.token is empty")
 
+skills_global = cfg.get("skills", {})
+skills_install_dir = skills_global.get("installDir", "workspace")
+
+agent_global = cfg.get("agent", {})
+agent_timeout = agent_global.get("timeoutSeconds", 300)
+agent_typing_interval = agent_global.get("typingIntervalSeconds", 300)
+
 for env_name, env_cfg in environments.items():
     models = env_cfg.get("models", {})
     primary = models.get("primary", "")
@@ -85,7 +92,8 @@ for env_name, env_cfg in environments.items():
 
     all_models = [primary] + fallback
 
-    # Check Ollama usage
+    # Check provider usage
+    models_use_dmr = any(m.startswith("docker-model-runner/") for m in all_models)
     models_use_ollama = any(m.startswith("ollama/") for m in all_models)
     ollama_env = env_cfg.get("ollama", {})
     ollama_mode = ollama_env.get("mode", "native")
@@ -141,15 +149,50 @@ for env_name, env_cfg in environments.items():
     with open(env_path, "w") as f:
         f.write("\n".join(env_lines) + "\n")
 
+    # --- Resolve context window size ---
+    # For local models (Docker Model Runner, Ollama), context size must be explicit
+    # because OpenClaw doesn't have them in its built-in model catalog.
+    # Cloud providers (Google, Anthropic) are in the catalog and don't need this.
+    context_tokens = None
+    if models_use_dmr:
+        dmr_cfg = env_cfg.get("docker-model-runner", {})
+        context_tokens = dmr_cfg.get("context-size")
+    elif models_use_ollama:
+        context_tokens = ollama_env.get("context-size")
+
     # --- Generate configs/active/<env>/openclaw.json ---
+    agent_defaults = {
+        "model": {
+            "primary": primary,
+            "fallbacks": fallback
+        },
+        "timeoutSeconds": agent_timeout,
+        "typingIntervalSeconds": agent_typing_interval
+    }
+
+    if context_tokens:
+        agent_defaults["contextTokens"] = context_tokens
+        # Scale compaction to trigger early enough to avoid overflow.
+        # reserveTokens: headroom before compaction triggers (40% of context)
+        # keepRecentTokens: recent messages kept after summarization (30%)
+        # reserveTokensFloor: gateway safety floor (matches reserveTokens)
+        # memoryFlush: persist session state before compaction runs
+        reserve_tokens = max(4096, int(context_tokens * 0.4))
+        keep_recent = max(4096, int(context_tokens * 0.3))
+        soft_threshold = max(2048, int(context_tokens * 0.1))
+        agent_defaults["compaction"] = {
+            "mode": "default",
+            "reserveTokens": reserve_tokens,
+            "reserveTokensFloor": reserve_tokens,
+            "keepRecentTokens": keep_recent,
+            "memoryFlush": {
+                "softThresholdTokens": soft_threshold
+            }
+        }
+
     openclaw_config = {
         "agents": {
-            "defaults": {
-                "model": {
-                    "primary": primary,
-                    "fallbacks": fallback
-                }
-            }
+            "defaults": agent_defaults
         },
         "gateway": {
             "port": gateway_port,
@@ -179,7 +222,6 @@ for env_name, env_cfg in environments.items():
     providers = {}
 
     # Docker Model Runner
-    models_use_dmr = any(m.startswith("docker-model-runner/") for m in all_models)
     if models_use_dmr:
         dmr_models = [m for m in all_models if m.startswith("docker-model-runner/")]
         providers["docker-model-runner"] = {
@@ -202,6 +244,25 @@ for env_name, env_cfg in environments.items():
     if providers:
         openclaw_config["models"] = {"providers": providers}
 
+    # Skills configuration
+    env_skills = env_cfg.get("skills", {})
+    enabled_skills = {slug: sc for slug, sc in env_skills.items() if sc.get("enabled", False)}
+    if enabled_skills:
+        skills_entries = {}
+        for slug, sc in enabled_skills.items():
+            entry = {"enabled": True}
+            skill_env = sc.get("env", {})
+            if skill_env:
+                entry["env"] = interpolate_env(skill_env)
+            skills_entries[slug] = entry
+        skills_load = {"watch": True}
+        if skills_install_dir == "workspace":
+            skills_load["extraDirs"] = ["/workspace/skills"]
+        openclaw_config["skills"] = {
+            "load": skills_load,
+            "entries": skills_entries
+        }
+
     active_dir = os.path.join(project_dir, "configs", "active", env_name)
     os.makedirs(active_dir, exist_ok=True)
     output_path = os.path.join(active_dir, "openclaw.json")
@@ -210,7 +271,8 @@ for env_name, env_cfg in environments.items():
         f.write("\n")
 
     # --- Generate configs/active/<env>/mcporter.json (MCP server definitions) ---
-    mcporter_config = {"servers": {}}
+    # mcporter expects "mcpServers" as the top-level key (not "servers")
+    mcporter_config = {"mcpServers": {}}
     for srv_name, srv in mcp_servers.items():
         if not srv.get("enabled", False):
             continue
@@ -218,19 +280,19 @@ for env_name, env_cfg in environments.items():
         resolved_env = interpolate_env(srv.get("env", {}))
 
         if srv_type == "docker":
-            mcporter_config["servers"][srv_name] = {
+            mcporter_config["mcpServers"][srv_name] = {
                 "transport": "sse",
                 "url": f"http://mcp-{srv_name}:8811/sse",
                 "env": resolved_env
             }
         elif srv_type == "sse":
-            mcporter_config["servers"][srv_name] = {
+            mcporter_config["mcpServers"][srv_name] = {
                 "transport": "sse",
                 "url": srv.get("url", ""),
                 "env": resolved_env
             }
         elif srv_type == "stdio":
-            mcporter_config["servers"][srv_name] = {
+            mcporter_config["mcpServers"][srv_name] = {
                 "transport": "stdio",
                 "command": srv.get("command", ""),
                 "args": srv.get("args", []),
@@ -247,6 +309,7 @@ for env_name, env_cfg in environments.items():
     print(f"    Primary:  {primary}")
     print(f"    Fallback: {', '.join(fallback) if fallback else 'none'}")
     print(f"    MCP:      {', '.join(enabled_mcp) if enabled_mcp else 'none'}")
+    print(f"    Skills:   {', '.join(enabled_skills.keys()) if enabled_skills else 'none'}")
 
 # Copy .env.dev as default .env (docker-compose reads .env by default)
 dev_env = os.path.join(project_dir, ".env.dev")
