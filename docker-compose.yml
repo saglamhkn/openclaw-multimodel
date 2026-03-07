@@ -39,7 +39,7 @@ services:
       - .:/workspace:cached
       - openclaw_state_dev:/home/node/.openclaw
       - ./configs/active/dev/openclaw.json:/home/node/.openclaw/openclaw.json:ro
-      - ./configs/active/dev/mcporter.json:/home/node/.config/mcporter/mcporter.json:ro
+      - ./configs/active/dev/mcporter.json:/home/node/.mcporter/mcporter.json
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -73,7 +73,7 @@ services:
     volumes:
       - openclaw_state_beta:/home/node/.openclaw
       - ./configs/active/beta/openclaw.json:/home/node/.openclaw/openclaw.json:ro
-      - ./configs/active/beta/mcporter.json:/home/node/.config/mcporter/mcporter.json:ro
+      - ./configs/active/beta/mcporter.json:/home/node/.mcporter/mcporter.json
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -97,18 +97,13 @@ services:
     volumes:
       - openclaw_state_prod:/home/node/.openclaw
       - ./configs/active/prod/openclaw.json:/home/node/.openclaw/openclaw.json:ro
-      - ./configs/active/prod/mcporter.json:/home/node/.config/mcporter/mcporter.json:ro
+      - ./configs/active/prod/mcporter.json:/home/node/.mcporter/mcporter.json
     dns:
       - 8.8.8.8
       - 1.1.1.1
     restart: unless-stopped
     profiles:
       - prod
-
-models:
-  qwen3-coder:
-    model: ai/qwen3-coder:32k
-    context_size: 32768
 
 volumes:
   ollama_data:

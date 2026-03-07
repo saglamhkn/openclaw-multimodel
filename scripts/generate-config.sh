@@ -85,7 +85,8 @@ for env_name, env_cfg in environments.items():
 
     all_models = [primary] + fallback
 
-    # Check Ollama usage
+    # Check provider usage
+    models_use_dmr = any(m.startswith("docker-model-runner/") for m in all_models)
     models_use_ollama = any(m.startswith("ollama/") for m in all_models)
     ollama_env = env_cfg.get("ollama", {})
     ollama_mode = ollama_env.get("mode", "native")
@@ -141,15 +142,38 @@ for env_name, env_cfg in environments.items():
     with open(env_path, "w") as f:
         f.write("\n".join(env_lines) + "\n")
 
+    # --- Resolve context window size ---
+    # For local models (Docker Model Runner, Ollama), context size must be explicit
+    # because OpenClaw doesn't have them in its built-in model catalog.
+    # Cloud providers (Google, Anthropic) are in the catalog and don't need this.
+    context_tokens = None
+    if models_use_dmr:
+        dmr_cfg = env_cfg.get("docker-model-runner", {})
+        context_tokens = dmr_cfg.get("context-size")
+    elif models_use_ollama:
+        context_tokens = ollama_env.get("context-size")
+
     # --- Generate configs/active/<env>/openclaw.json ---
+    agent_defaults = {
+        "model": {
+            "primary": primary,
+            "fallbacks": fallback
+        }
+    }
+
+    if context_tokens:
+        agent_defaults["contextTokens"] = context_tokens
+        # Scale compaction settings to context window
+        reserve_floor = max(2048, context_tokens // 4)
+        keep_recent = max(2048, context_tokens // 4)
+        agent_defaults["compaction"] = {
+            "reserveTokensFloor": reserve_floor,
+            "keepRecentTokens": keep_recent
+        }
+
     openclaw_config = {
         "agents": {
-            "defaults": {
-                "model": {
-                    "primary": primary,
-                    "fallbacks": fallback
-                }
-            }
+            "defaults": agent_defaults
         },
         "gateway": {
             "port": gateway_port,
@@ -179,7 +203,6 @@ for env_name, env_cfg in environments.items():
     providers = {}
 
     # Docker Model Runner
-    models_use_dmr = any(m.startswith("docker-model-runner/") for m in all_models)
     if models_use_dmr:
         dmr_models = [m for m in all_models if m.startswith("docker-model-runner/")]
         providers["docker-model-runner"] = {
@@ -210,7 +233,8 @@ for env_name, env_cfg in environments.items():
         f.write("\n")
 
     # --- Generate configs/active/<env>/mcporter.json (MCP server definitions) ---
-    mcporter_config = {"servers": {}}
+    # mcporter expects "mcpServers" as the top-level key (not "servers")
+    mcporter_config = {"mcpServers": {}}
     for srv_name, srv in mcp_servers.items():
         if not srv.get("enabled", False):
             continue
@@ -218,19 +242,19 @@ for env_name, env_cfg in environments.items():
         resolved_env = interpolate_env(srv.get("env", {}))
 
         if srv_type == "docker":
-            mcporter_config["servers"][srv_name] = {
+            mcporter_config["mcpServers"][srv_name] = {
                 "transport": "sse",
                 "url": f"http://mcp-{srv_name}:8811/sse",
                 "env": resolved_env
             }
         elif srv_type == "sse":
-            mcporter_config["servers"][srv_name] = {
+            mcporter_config["mcpServers"][srv_name] = {
                 "transport": "sse",
                 "url": srv.get("url", ""),
                 "env": resolved_env
             }
         elif srv_type == "stdio":
-            mcporter_config["servers"][srv_name] = {
+            mcporter_config["mcpServers"][srv_name] = {
                 "transport": "stdio",
                 "command": srv.get("command", ""),
                 "args": srv.get("args", []),

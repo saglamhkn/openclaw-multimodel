@@ -59,72 +59,72 @@ warnings = []
 dmr_models = [m for m in all_models if m.startswith("docker-model-runner/")]
 if dmr_models:
     dmr_cfg = env_cfg.get("docker-model-runner", {})
-    target_ctx = dmr_cfg.get("context-size", 32768)
+    target_ctx = dmr_cfg.get("context-size", 65536)
     keep_alive = dmr_cfg.get("keep-alive", -1)
+    base_model = dmr_cfg.get("base-model", "")
+
+    # Get list of available models
+    try:
+        result = subprocess.run(
+            ["docker", "model", "list"],
+            capture_output=True, text=True, timeout=10
+        )
+        model_list_output = result.stdout
+    except Exception:
+        model_list_output = ""
 
     print("  Docker Model Runner:")
     for model_full in dmr_models:
-        model_id = model_full.split("/", 1)[1]  # e.g. "ai/qwen3-coder"
+        model_id = model_full.split("/", 1)[1]  # e.g. "qwen3-coder:65k"
 
-        # Check if model exists
-        try:
-            result = subprocess.run(
-                ["docker", "model", "list"],
-                capture_output=True, text=True, timeout=10
-            )
-            model_exists = model_id in result.stdout or model_full.replace("docker-model-runner/", "") in result.stdout
-        except Exception:
-            model_exists = False
+        # Derive base model from config or model_id
+        model_base = base_model or model_id.split(":")[0]  # e.g. "qwen3-coder"
 
-        if not model_exists:
-            print(f"    [MISSING]  {model_id}")
-            errors.append(f"Run: docker model pull {model_id}")
+        # Check if base model exists (needed for packaging)
+        base_exists = model_base in model_list_output
+        tagged_exists = model_id in model_list_output
+
+        if not base_exists and not tagged_exists:
+            print(f"    [MISSING]  {model_base} — base model not found")
+            errors.append(f"Run: docker model pull {model_base}")
             continue
 
-        # Check context-size configuration
-        try:
-            result = subprocess.run(
-                ["docker", "model", "configure", "show", model_id],
-                capture_output=True, text=True, timeout=10
-            )
-            show_output = result.stdout.strip()
+        # Parse current context size from model list output
+        current_ctx = None
+        for line in model_list_output.split("\n"):
+            if model_id in line:
+                # Parse context column from docker model list output
+                parts = line.split()
+                for p in parts:
+                    try:
+                        val = int(p)
+                        if val >= 1024:  # context sizes are >= 1024
+                            current_ctx = val
+                    except ValueError:
+                        continue
 
-            # Parse context-size from output
-            current_ctx = None
-            for line in show_output.split("\n"):
-                if "context-size" in line.lower():
-                    parts = line.split()
-                    for p in parts:
-                        try:
-                            current_ctx = int(p)
-                        except ValueError:
-                            continue
-        except Exception:
-            current_ctx = None
-
-        needs_configure = current_ctx != target_ctx
-
-        if needs_configure:
-            print(f"    [CONFIG]   {model_id} — setting context-size={target_ctx}, keep-alive={keep_alive}")
-            try:
-                subprocess.run(
-                    ["docker", "model", "configure",
-                     "--context-size", str(target_ctx),
-                     "--keep-alive", str(keep_alive),
-                     model_id],
-                    capture_output=True, text=True, timeout=10
-                )
-                # Unload to force reload with new context
-                subprocess.run(
-                    ["docker", "model", "unload", model_id],
-                    capture_output=True, text=True, timeout=10
-                )
-                print(f"    [READY]    {model_id} — context-size={target_ctx} (unloaded, will reload on first request)")
-            except Exception as e:
-                print(f"    [ERROR]    {model_id} — failed to configure: {e}")
-                errors.append(f"Manually run: docker model configure --context-size {target_ctx} --keep-alive {keep_alive} {model_id}")
-        else:
+        if current_ctx == target_ctx:
             print(f"    [READY]    {model_id} — context-size={current_ctx}")
+        else:
+            # Use docker model package to create variant with correct context
+            # (docker model configure is broken — llama.cpp ignores stored values)
+            print(f"    [PACKAGE]  {model_id} — packaging with context-size={target_ctx} from {model_base}")
+            try:
+                result = subprocess.run(
+                    ["docker", "model", "package",
+                     "--from", model_base,
+                     "--context-size", str(target_ctx),
+                     model_id],
+                    capture_output=True, text=True, timeout=120
+                )
+                if result.returncode == 0:
+                    print(f"    [READY]    {model_id} — context-size={target_ctx}")
+                else:
+                    print(f"    [ERROR]    {model_id} — package failed: {result.stderr.strip()}")
+                    errors.append(f"Run: docker model package --from {model_base} --context-size {target_ctx} {model_id}")
+            except Exception as e:
+                print(f"    [ERROR]    {model_id} — package failed: {e}")
+                errors.append(f"Run: docker model package --from {model_base} --context-size {target_ctx} {model_id}")
 
     print("")
 

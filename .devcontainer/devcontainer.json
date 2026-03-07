@@ -15,9 +15,9 @@
   "portsAttributes": {
     "18789": { "label": "OpenClaw Gateway", "onAutoForward": "notify" }
   },
-  "postCreateCommand": "bash /workspace/scripts/setup.sh && npm install -g mcporter 2>/dev/null || true",
+  "postCreateCommand": "bash /workspace/scripts/setup.sh && npm config set prefix /home/node/.npm-global && npm install -g mcporter",
   "initializeCommand": "mkdir -p configs/active/dev configs/active/beta configs/active/prod",
-  "postStartCommand": "chown -R node:node /home/node/.openclaw /home/node/.config 2>/dev/null || true && bash /workspace/scripts/init-models.sh dev",
+  "postStartCommand": "chown -R node:node /home/node/.openclaw /home/node/.mcporter 2>/dev/null || true && bash /workspace/scripts/init-models.sh dev",
   "waitFor": "postCreateCommand",
   "customizations": {
     "vscode": {
@@ -28,7 +28,8 @@
       "settings": {
         "terminal.integrated.defaultProfile.linux": "zsh",
         "terminal.integrated.env.linux": {
-          "NODE_OPTIONS": "--require /workspace/scripts/undici-timeout-preload.cjs"
+          "NODE_OPTIONS": "--require /workspace/scripts/undici-timeout-preload.cjs",
+          "PATH": "/home/node/.npm-global/bin:${env:PATH}"
         }
       }
     }

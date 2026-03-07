@@ -2,11 +2,12 @@
   "environments": {
     "dev": {
       "models": {
-        "primary": "docker-model-runner/ai/qwen3-coder",
+        "primary": "docker-model-runner/qwen3-coder:65k",
         "fallback": []
       },
       "docker-model-runner": {
-        "context-size": 32768,
+        "base-model": "qwen3-coder:32k",
+        "context-size": 65536,
         "keep-alive": -1
       },
       "mcp": {
